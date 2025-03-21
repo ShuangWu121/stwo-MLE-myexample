@@ -56,6 +56,7 @@ impl Components<'_> {
     ) -> SecureField {
         let mut evaluation_accumulator = PointEvaluationAccumulator::new(random_coeff);
         for component in &self.components {
+            println!("evaluate_constraint_quotients_at_point");
             component.evaluate_constraint_quotients_at_point(
                 point,
                 mask_values,
@@ -130,7 +131,10 @@ impl<B: Backend> ComponentProvers<'_, B> {
             self.components().composition_log_degree_bound(),
             total_constraints,
         );
+
+        println!("compute_composition_polynomial");
         for component in &self.components {
+            println!("evaluate_constraint_quotients_on_domain");
             component.evaluate_constraint_quotients_on_domain(trace, &mut accumulator)
         }
         accumulator.finalize()

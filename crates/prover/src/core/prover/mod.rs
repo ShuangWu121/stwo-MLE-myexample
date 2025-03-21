@@ -43,19 +43,27 @@ pub fn prove<B: BackendForChannel<MC>, MC: MerkleChannel>(
 
     let span = span!(Level::INFO, "Composition").entered();
     let span1 = span!(Level::INFO, "Generation").entered();
+
+    println!("\n Generating composition polynomial");
     let composition_poly = component_provers.compute_composition_polynomial(random_coeff, &trace);
     span1.exit();
+
+    println!("\n Committing composition polynomial");
 
     let mut tree_builder = commitment_scheme.tree_builder();
     tree_builder.extend_polys(composition_poly.into_coordinate_polys());
     tree_builder.commit(channel);
     span.exit();
 
+    println!("\n Composition polynomial committed");
+
     // Draw OODS point.
     let oods_point = CirclePoint::<SecureField>::get_random_point(channel);
 
     // Get mask sample points relative to oods point.
     let mut sample_points = component_provers.components().mask_points(oods_point);
+
+    println!("\n Mask points generated");
 
     // Add the composition polynomial mask points.
     sample_points.push(vec![vec![oods_point]; SECURE_EXTENSION_DEGREE]);
@@ -64,6 +72,8 @@ pub fn prove<B: BackendForChannel<MC>, MC: MerkleChannel>(
     let commitment_scheme_proof = commitment_scheme.prove_values(sample_points, channel);
     let proof = StarkProof(commitment_scheme_proof);
     info!(proof_size_estimate = proof.size_estimate());
+
+    println!("\n Trace and composition OODS values proven");
 
     // Evaluate composition polynomial at OODS point and check that it matches the trace OODS
     // values. This is a sanity check.
@@ -166,11 +176,15 @@ impl<H: MerkleHasher> StarkProof<H> {
 
         let mut composition_cols = composition_mask.iter();
 
+        println!("\n Extracting composition OODS eval");
+
         let coordinate_evals = array::try_from_fn(|_| {
             let col = &**composition_cols.next().ok_or(InvalidOodsSampleStructure)?;
             let [eval] = col.try_into().map_err(|_| InvalidOodsSampleStructure)?;
             Ok(eval)
         })?;
+
+        println!("\n Composition OODS eval extracted");
 
         // Too many columns.
         if composition_cols.next().is_some() {

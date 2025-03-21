@@ -100,6 +100,8 @@ impl<'a, B: BackendForChannel<MC>, MC: MerkleChannel> CommitmentSchemeProver<'a,
                     .collect_vec()
             });
         span.exit();
+
+        println!("\n got samples ");
         let sampled_values = samples
             .as_cols_ref()
             .map_cols(|x| x.iter().map(|o| o.value).collect());

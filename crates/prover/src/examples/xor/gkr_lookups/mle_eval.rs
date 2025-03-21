@@ -154,9 +154,17 @@ impl<O: MleCoeffColumnOracle> Component for MleEvalProverComponent<'_, '_, O> {
         mask: &TreeVec<ColumnVec<Vec<SecureField>>>,
         accumulator: &mut PointEvaluationAccumulator,
     ) {
+        println!("mle evaluate constraint at point");
         // Consistency check the MLE coeffs column polynomial and oracle.
+
         let mle_coeff_col_eval = self.mle_coeff_column_poly.eval_at_point(point);
+        println!("mle_coeff_col_eval is {:?}", mle_coeff_col_eval);
+
+        println!("query mle_coeff_column_oracle");
+        println!("mask is {:?}", mask);
+
         let oracle_mle_coeff_col_eval = self.mle_coeff_column_oracle.evaluate_at_point(point, mask);
+        println!("got oracle answer");
         assert_eq!(mle_coeff_col_eval, oracle_mle_coeff_col_eval);
 
         let component_mask = mask.sub_tree(&self.trace_locations);
@@ -195,8 +203,18 @@ impl<O: MleCoeffColumnOracle> ComponentProver<SimdBackend> for MleEvalProverComp
         trace: &Trace<'_, SimdBackend>,
         accumulator: &mut DomainEvaluationAccumulator<SimdBackend>,
     ) {
+        println!(
+            " \n trace in evaluate_constraint_quotients_on_domain: original trace {:?}",
+            trace.evals[1]
+        );
+        println!(
+            " \n trace in evaluate_constraint_quotients_on_domain: MLE trace {:?}",
+            trace.evals[2]
+        );
         let eval_domain = CanonicCoset::new(self.max_constraint_log_degree_bound()).circle_domain();
         let trace_domain = CanonicCoset::new(self.log_size());
+
+        println!("in MleEvalProverComponent::evaluate_constraint_quotients_on_domain");
 
         let mut component_trace = trace.evals.sub_tree(&self.trace_locations).map_cols(|c| *c);
 
@@ -224,12 +242,16 @@ impl<O: MleCoeffColumnOracle> ComponentProver<SimdBackend> for MleEvalProverComp
         component_trace.push(aux_trace);
         span.exit();
 
+        println!("\n auxiliary trace is built");
+
         // Denom inverses.
         let log_expand = eval_domain.log_size() - trace_domain.log_size();
         let mut denom_inv = (0..1 << log_expand)
             .map(|i| coset_vanishing(trace_domain.coset(), eval_domain.at(i)).inverse())
             .collect_vec();
         bit_reverse(&mut denom_inv);
+
+        println!("\n denom_inv is built");
 
         // Accumulator.
         let [mut acc] = accumulator.columns([(eval_domain.log_size(), self.n_constraints())]);
@@ -264,6 +286,10 @@ impl<O: MleCoeffColumnOracle> ComponentProver<SimdBackend> for MleEvalProverComp
                 is_first,
                 is_second,
             );
+
+            println!("\n start finalizing");
+
+            println!("trace_domain.log_size() {:?}", trace_domain.log_size());
 
             // Finalize row.
             let row_res = eval.row_res;
@@ -568,7 +594,9 @@ pub fn build_trace(
 
     #[cfg(test)]
     debug_assert_eq!(claim, mle.eval_at_point(eval_point));
+    println!("\n claim is : {:?}", claim);
     let shift = claim / BaseField::from(mle.len());
+    println!("\n shift is : {:?}", shift);
     let packed_shift_coords = PackedSecureField::broadcast(shift).into_packed_m31s();
     let mut shifted_mle_terms_cols = mle_terms_cols;
     zip(&mut shifted_mle_terms_cols, packed_shift_coords)
@@ -750,9 +778,11 @@ mod tests {
     };
     use crate::core::air::{Component, ComponentProver, Components};
     use crate::core::backend::cpu::bit_reverse;
+    use crate::core::backend::simd::column::SecureColumn;
     use crate::core::backend::simd::prefix_sum::inclusive_prefix_sum;
     use crate::core::backend::simd::qm31::PackedSecureField;
     use crate::core::backend::simd::SimdBackend;
+    use crate::core::backend::Column;
     use crate::core::channel::Blake2sChannel;
     use crate::core::circle::SECURE_FIELD_CIRCLE_GEN;
     use crate::core::fields::m31::BaseField;
@@ -779,8 +809,12 @@ mod tests {
         let mut rng = SmallRng::seed_from_u64(0);
         let log_size = N_VARIABLES as u32;
         let size = 1 << log_size;
-        let mle_coeffs = (0..size).map(|_| rng.gen::<SecureField>()).collect();
+        let mle_coeffs: SecureColumn = (0..size).map(|_| rng.gen::<SecureField>()).collect();
+        println!("length of mle_coeffs: {:?}", mle_coeffs.length);
+        // put the coeffs directly as evaluation points, confusion move.
         let mle = Mle::<SimdBackend, SecureField>::new(mle_coeffs);
+        println!("length of mle: {:?}", mle.len());
+        // the evaluation points should be the same number of variables
         let eval_point: [SecureField; N_VARIABLES] = array::from_fn(|_| rng.gen());
         let claim = mle.eval_at_point(&eval_point);
         // Setup protocol.
@@ -1196,6 +1230,7 @@ mod tests {
         };
         use crate::core::air::accumulation::PointEvaluationAccumulator;
         use crate::core::backend::simd::SimdBackend;
+        use crate::core::backend::Column;
         use crate::core::circle::CirclePoint;
         use crate::core::fields::m31::BaseField;
         use crate::core::fields::qm31::SecureField;
@@ -1243,6 +1278,8 @@ mod tests {
                 _point: CirclePoint<SecureField>,
                 mask: &TreeVec<ColumnVec<Vec<SecureField>>>,
             ) -> SecureField {
+                println!("in evaluate at point");
+                println!("the mask is {:?}", mask);
                 // Create dummy point evaluator just to extract the value we need from the mask
                 let mut accumulator = PointEvaluationAccumulator::new(SecureField::one());
                 let mut eval = PointEvaluator::new(
@@ -1279,10 +1316,26 @@ mod tests {
             let log_size = mle.n_variables() as u32;
             let trace_domain = CanonicCoset::new(log_size).circle_domain();
             let mle_coeffs_col_by_coords = mle.clone().into_evals().into_secure_column_by_coords();
-            SecureEvaluation::new(trace_domain, mle_coeffs_col_by_coords)
-                .into_coordinate_evals()
-                .into_iter()
-                .collect()
+
+            // println!("first column of the mle_coeffs_col_by_coords: {:?}",
+            // mle_coeffs_col_by_coords.columns[0]); println!("\n second column of the
+            // mle_coeffs_col_by_coords: {:?}", mle_coeffs_col_by_coords.columns[1]);
+            let secure_evaluations: Vec<_> =
+                SecureEvaluation::new(trace_domain, mle_coeffs_col_by_coords)
+                    .into_coordinate_evals()
+                    .into_iter()
+                    .collect();
+
+            println!(
+                "length of secure evluations: {}",
+                secure_evaluations[0].len()
+            );
+            // println!("first column of the secure evaluations: {:?}", secure_evaluations[0]);
+            // println!("second column of the secure evaluations: {:?}", secure_evaluations[1]);
+            // println!("third column of the secure evaluations: {:?}", secure_evaluations[2]);
+            // println!("forth column of the secure evaluations: {:?}", secure_evaluations[3]);
+
+            secure_evaluations
         }
     }
 }

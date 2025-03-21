@@ -4,7 +4,7 @@ use educe::Educe;
 
 use crate::core::backend::{Col, Column, ColumnOps};
 use crate::core::fields::qm31::SecureField;
-use crate::core::fields::Field;
+use crate::core::fields::{ExtensionOf, Field};
 
 pub trait MleOps<F: Field>: ColumnOps<F> + Sized {
     /// Returns a transformed [`Mle`] where the first variable is fixed to `assignment`.
@@ -64,43 +64,44 @@ impl<B: ColumnOps<F>, F: Field> DerefMut for Mle<B, F> {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::{Mle, MleOps};
-    use crate::core::backend::Column;
-    use crate::core::fields::qm31::SecureField;
-    use crate::core::fields::{ExtensionOf, Field};
-
-    impl<B, F> Mle<B, F>
-    where
-        F: Field,
-        SecureField: ExtensionOf<F>,
-        B: MleOps<F>,
-    {
-        /// Evaluates the multilinear polynomial at `point`.
-        pub(crate) fn eval_at_point(&self, point: &[SecureField]) -> SecureField {
-            pub fn eval(mle_evals: &[SecureField], p: &[SecureField]) -> SecureField {
-                match p {
-                    [] => mle_evals[0],
-                    &[p_i, ref p @ ..] => {
-                        let (lhs, rhs) = mle_evals.split_at(mle_evals.len() / 2);
-                        let lhs_eval = eval(lhs, p);
-                        let rhs_eval = eval(rhs, p);
-                        // Equivalent to `eq(0, p_i) * lhs_eval + eq(1, p_i) * rhs_eval`.
-                        p_i * (rhs_eval - lhs_eval) + lhs_eval
-                    }
+impl<B, F> Mle<B, F>
+where
+    F: Field,
+    SecureField: ExtensionOf<F>,
+    B: MleOps<F>,
+{
+    /// Evaluates the multilinear polynomial at `point`.
+    pub(crate) fn eval_at_point(&self, point: &[SecureField]) -> SecureField {
+        pub fn eval(mle_evals: &[SecureField], p: &[SecureField]) -> SecureField {
+            match p {
+                [] => mle_evals[0],
+                &[p_i, ref p @ ..] => {
+                    let (lhs, rhs) = mle_evals.split_at(mle_evals.len() / 2);
+                    let lhs_eval = eval(lhs, p);
+                    let rhs_eval = eval(rhs, p);
+                    // Equivalent to `eq(0, p_i) * lhs_eval + eq(1, p_i) * rhs_eval`.
+                    p_i * (rhs_eval - lhs_eval) + lhs_eval
                 }
             }
-
-            let mle_evals = self
-                .clone()
-                .into_evals()
-                .to_cpu()
-                .into_iter()
-                .map(|v| v.into())
-                .collect::<Vec<_>>();
-
-            eval(&mle_evals, point)
         }
+
+        let mle_evals = self
+            .clone()
+            .into_evals()
+            .to_cpu()
+            .into_iter()
+            .map(|v| v.into())
+            .collect::<Vec<_>>();
+
+        eval(&mle_evals, point)
     }
 }
+
+// #[cfg(test)]
+// mod test {
+//     use super::{Mle, MleOps};
+//     use crate::core::backend::Column;
+//     use crate::core::fields::qm31::SecureField;
+//     use crate::core::fields::{ExtensionOf, Field};
+
+// }
